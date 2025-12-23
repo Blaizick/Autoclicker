@@ -4,9 +4,53 @@
 
 #include "Autoclicker.h"
 
-#include <algorithm>
-
 namespace Autoclicker {
+#pragma region ConfigSystem
+    void ConfigSystem::init() {
+        auto path = SDL_GetPrefPath("Blaizi", "Autoclicker");
+        std::filesystem::create_directories(path);
+        configPath = std::filesystem::path(path) / FileName;
+        SDL_free(path);
+
+        if (std::filesystem::exists(configPath)) {
+            load();
+        }
+    }
+
+    void ConfigSystem::update() {
+        if (state == ConfigSystemState_Rebinding) {
+            int key = 0;
+            if (inputSystem->getKeyDown(key)) {
+                state = ConfigSystemState_Idle;
+                configData.enableKey = key;
+                framesSinceRebind = 0;
+                save();
+            }
+        }
+        framesSinceRebind++;
+    }
+
+    void ConfigSystem::save() {
+        std::ofstream(configPath) << YAML::Node(configData);
+    }
+    void ConfigSystem::load() {
+        configData = YAML::LoadFile(configPath.string()).as<ConfigData>();
+    }
+
+    void ConfigSystem::startRebinding() {
+        state = ConfigSystemState_Rebinding;
+    }
+
+    void ConfigSystem::stopRebinding() {
+        state = ConfigSystemState_Idle;
+    }
+
+    void ConfigSystem::resetKeybind() {
+        configData.enableKey = configData.overrideEnableKey;
+        save();
+    }
+#pragma endregion
+
 #pragma region InputSystem
     void InputSystem::fillWithClick(INPUT *inputs) {
         inputs[0].type = INPUT_MOUSE;
@@ -17,13 +61,13 @@ namespace Autoclicker {
     }
 
     void InputSystem::click() {
-        INPUT inputs[2] = {0};
+        INPUT inputs[2] = {};
         fillWithClick(inputs);
         SendInput(2, inputs, sizeof(INPUT));
     }
 
     void InputSystem::click(float x, float y) {
-        INPUT inputs[3] = {0};
+        INPUT inputs[3] = {};
 
         inputs[0].type = INPUT_MOUSE;
         inputs[0].mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
@@ -49,6 +93,20 @@ namespace Autoclicker {
 
     bool InputSystem::isKeyDown(int key) {
         return GetAsyncKeyState(key) & 0x8000;
+    }
+
+    bool InputSystem::getKeyDown(int& key) {
+        key = m_KeyDown;
+        return m_IsKeyDown;
+    }
+
+    void InputSystem::setKeyDown(int key) {
+        m_IsKeyDown = true;
+        m_KeyDown = key;
+    }
+
+    void InputSystem::update() {
+        m_IsKeyDown = false;
     }
 #pragma endregion
 
@@ -112,6 +170,62 @@ namespace Autoclicker {
     }
 #pragma endregion
 
+#pragma region DesktopInput
+    void DesktopInput::update() {
+        if (configSystem->state != ConfigSystemState_Rebinding && configSystem->framesSinceRebind > 10) {
+            bool pressed = inputSystem->isKeyDown(configSystem->configData.enableKey);
+            if (pressed && !m_enablePressed) {
+                if (autoclicker->state == AutoclickerState_Clicking) {
+                    autoclicker->stopClicking();
+                }
+                else {
+                    autoclicker->startClicking();
+                }
+            }
+            m_enablePressed = pressed;
+        }
+    }
+#pragma endregion
+
+#pragma region SettingsWindow
+    void SettingsWindow::draw() {
+        if (!active) {
+            return;
+        }
+
+        ImGui::Begin("Settings");
+
+        if (configSystem->state == ConfigSystemState_Idle) {
+            UINT scanCode = MapVirtualKey(configSystem->configData.enableKey, MAPVK_VK_TO_VSC);
+            char name[128] = {};
+            GetKeyNameTextA(scanCode << 16, name, sizeof(name));
+
+            ImGui::Columns(4, nullptr, false);
+            ImGui::Text("Start/Stop");
+            ImGui::NextColumn();
+            ImGui::Text(name);
+            ImGui::NextColumn();
+            if (ImGui::Button("Rebind")) {
+                configSystem->startRebinding();
+            }
+            ImGui::NextColumn();
+            if (ImGui::Button("Reset")) {
+                configSystem->resetKeybind();
+            }
+            ImGui::NextColumn();
+        }
+        else if (configSystem->state == ConfigSystemState_Rebinding) {
+            ImGui::Text("Press any key");
+        }
+
+        if (ImGui::Button("Close")) {
+            active = false;
+        }
+
+        ImGui::End();
+    }
+#pragma endregion
+
 #pragma region AutoclickerWindow
     void AutoclickerWindow::draw() {
 #ifdef IMGUI_HAS_VIEWPORT
@@ -124,7 +238,8 @@ namespace Autoclicker {
         ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
 #endif
 
-        ImGui::Begin("Autoclicker", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
+        ImGui::Begin("Autoclicker", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoFocusOnAppearing);
 
         {
             ImGui::Text("Click interval");
@@ -212,7 +327,36 @@ namespace Autoclicker {
             }
         }
 
+        ImGui::Spacing();
+
+        if (ImGui::Button("Settings")) {
+            settingsWindow->active = !settingsWindow->active;
+        }
+
         ImGui::End();
     }
 #pragma endregion
+}
+
+using namespace Autoclicker;
+
+namespace YAML {
+    template <>
+    struct convert<ConfigData> {
+        static Node encode(const ConfigData& data) {
+            Node node;
+            node["EnableKey"] = data.enableKey;
+            node["OverrideEnableKey"] = data.overrideEnableKey;
+            return node;
+        }
+        static bool decode(const Node& node, ConfigData& data) {
+            if (node["EnableKey"]) {
+                data.enableKey = node["EnableKey"].as<int>();
+            }
+            if (node["OverrideEnableKey"]) {
+                data.overrideEnableKey = node["OverrideEnableKey"].as<int>();
+            }
+            return true;
+        }
+    };
 }

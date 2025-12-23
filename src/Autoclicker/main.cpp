@@ -8,14 +8,34 @@
 #include <backends/imgui_impl_sdl3.h>
 #include <backends/imgui_impl_opengl3.h>
 
+#include <Windows.h>
+
 #include "Autoclicker.h"
 
 //TODO Crossplatform
 //TODO Click duration
-//TODO RMB click etc
-//TODO Start clicking on hotkey
+//TODO Show current state
+
+HHOOK gKeyboardHook;
+
+LRESULT CALLBACK KeyboardProc(int code, WPARAM wParam, LPARAM lParam)
+{
+    if (code == HC_ACTION) {
+        KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
+
+        bool pressed = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN);
+        bool released = (wParam == WM_KEYUP   || wParam == WM_SYSKEYUP);
+
+        if (pressed) {
+            Autoclicker::inputSystem->setKeyDown(kb->vkCode);
+        }
+    }
+    return CallNextHookEx(gKeyboardHook, code, wParam, lParam);
+}
 
 int main() {
+    gKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
+
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD))
     {
         printf("Error: SDL_Init(): %s\n", SDL_GetError());
@@ -56,6 +76,8 @@ int main() {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+
+#pragma region Style
 
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
@@ -163,13 +185,22 @@ int main() {
     style.ScaleAllSizes(mainScale);
     style.FontScaleDpi = mainScale;
 
+    //--------------------------------------------------------
+
+#pragma endregion
+
     ImGui_ImplSDL3_InitForOpenGL(window, glContext);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     auto inputSystem = std::make_shared<Autoclicker::InputSystem>();
+    auto configSystem = std::make_shared<Autoclicker::ConfigSystem>(inputSystem);
+    configSystem->init();
     auto autoclicker = std::make_shared<Autoclicker::Autoclicker>(inputSystem);
+    Autoclicker::inputSystem = inputSystem;
     autoclicker->init();
-    auto autoclickerWindow = Autoclicker::AutoclickerWindow(autoclicker, inputSystem);
+    auto desktopInput = std::make_shared<Autoclicker::DesktopInput>(inputSystem, autoclicker, configSystem);
+    auto settingsWindow = std::make_shared<Autoclicker::SettingsWindow>(configSystem);
+    auto autoclickerWindow = std::make_shared<Autoclicker::AutoclickerWindow>(autoclicker, inputSystem, settingsWindow);
 
     bool running = true;
     while (running)
@@ -188,8 +219,12 @@ int main() {
 
         ImGui::NewFrame();
 
+        desktopInput->update();
+        autoclickerWindow->draw();
+        settingsWindow->draw();
+        configSystem->update();
         autoclicker->update();
-        autoclickerWindow.draw();
+        inputSystem->update();
 
         ImGui::Render();
         glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);

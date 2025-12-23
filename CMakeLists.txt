@@ -25,11 +25,14 @@ add_executable(Autoclicker WIN32 ${PROJECT_SOURCES}
 target_include_directories(Autoclicker PRIVATE ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/lib/sdl3/include
         ${IMGUI_INCLUDE_DIRECTORIES}
+        ${CMAKE_SOURCE_DIR}/lib/yaml-cpp/include
 )
 
-target_compile_definitions(Autoclicker PRIVATE SDL_STATIC)
+target_compile_definitions(Autoclicker PRIVATE SDL_STATIC
+        YAML_CPP_STATIC_DEFINE)
 
 target_link_libraries(Autoclicker PRIVATE ${CMAKE_SOURCE_DIR}/lib/sdl3/lib/libSDL3.a
+        ${CMAKE_SOURCE_DIR}/lib/yaml-cpp/lib/libyaml-cpp.a
         opengl32
         winmm
         imm32
