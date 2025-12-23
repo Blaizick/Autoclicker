@@ -21,7 +21,25 @@ typedef int ClicksCountType;
 #define ClicksCountType_InfinityClicks 0
 #define ClicksCountType_ClicksCount 1
 
+typedef int ClickPositionType;
+#define ClickPositionType_CursorPosition 0
+#define ClickPositionType_CustomPosition 1
+
+typedef int AutoclickerState;
+#define AutoclickerState_Idle 0
+#define AutoclickerState_Clicking 1
+#define AutoclickerState_PickingPosition 2
+
 namespace Autoclicker {
+    class Vec2 {
+    public:
+        float x = 0.0f;
+        float y = 0.0f;
+
+        Vec2() = default;
+        Vec2(float x, float y) : x(x), y(y) {};
+    };
+
     class ClickIntervalData {
     public:
         float milliseconds = 100.0f;
@@ -31,32 +49,55 @@ namespace Autoclicker {
     };
     class ClicksCountData {
     public:
-        int clicksType = 0;
+        int clicksType = ClicksCountType_InfinityClicks;
         int clicksCount = 0;
+    };
+    class ClickPositionData {
+    public:
+        float x = 0.0f;
+        float y = 0.0f;
+        int clickPositionType = ClickPositionType_CursorPosition;
     };
 
     class ClickInterval {
     public:
-        static long intervalToSeconds(ClickIntervalData& data) {
+        static float intervalToSeconds(ClickIntervalData& data) {
             return (data.milliseconds * 0.001f) + (data.seconds) + (data.minutes * 60) + (data.hours * 3600);
         }
     };
 
+    class InputSystem {
+    private:
+        void fillWithClick(INPUT* inputs);
+    public:
+        void click();
+        void click(float x, float y);
+        bool getMousePosition(Vec2* pos);
+        bool isKeyDown(int key);
+    };
 
     class Autoclicker {
     private:
         std::chrono::time_point<std::chrono::system_clock> m_LastClickTime;
 
     public:
+        std::shared_ptr<InputSystem> inputSystem;
+
         ClicksCountData clicksCountData;
         int curClicksCount = 0;
         int framesSinceAutostop = 0;
 
         ClickIntervalData clickIntervalData;
-        bool clicking = false;
+        ClickPositionData clickPositionData;
+
+        int state = AutoclickerState_Idle;
+
+        Autoclicker() = default;
+        explicit Autoclicker(const std::shared_ptr<InputSystem>& inputSystem) : inputSystem(inputSystem) {}
 
         void startClicking();
         void stopClicking();
+        void startPickingPosition();
 
         void setClicksCountData(ClicksCountData& data);
 
@@ -66,9 +107,11 @@ namespace Autoclicker {
 
     class AutoclickerWindow {
     public:
+        std::shared_ptr<InputSystem> inputSystem;
         std::shared_ptr<Autoclicker> autoclicker;
 
-        AutoclickerWindow(std::shared_ptr<Autoclicker> autoclicker) : autoclicker(autoclicker) {};
+        AutoclickerWindow() = default;
+        AutoclickerWindow(const std::shared_ptr<Autoclicker>& autoclicker, const std::shared_ptr<InputSystem>& inputSystem) : autoclicker(autoclicker), inputSystem(inputSystem) {};
 
         void draw();
     };

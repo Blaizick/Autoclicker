@@ -18,7 +18,7 @@ set(IMGUI_SOURCES lib/imgui/imgui.cpp
 set(IMGUI_INCLUDE_DIRECTORIES lib/imgui
         lib/imgui/backends)
 
-add_executable(Autoclicker ${PROJECT_SOURCES}
+add_executable(Autoclicker WIN32 ${PROJECT_SOURCES}
         ${IMGUI_SOURCES}
 )
 
